@@ -1,0 +1,92 @@
+name: Daily Trends Video
+
+# 触发条件：
+#   1. schedule  — 每天 UTC 02:30（北京时间 10:30）自动跑
+#   2. workflow_dispatch — 手动触发，可指定日期
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '日期 (YYYY-MM-DD)，留空则用今日 UTC'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # 写 release 需要
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg + Noto CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            fonts-noto-cjk \
+            fonts-noto-cjk-extra
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Determine target date
+        id: date
+        run: |
+          INPUT_DATE="${{ github.event.inputs.date }}"
+          if [ -z "$INPUT_DATE" ]; then
+            INPUT_DATE=$(date -u +%Y-%m-%d)
+          fi
+          echo "date=$INPUT_DATE" >> "$GITHUB_OUTPUT"
+          echo "Building video for: $INPUT_DATE"
+
+      - name: Fetch trends markdown
+        env:
+          DATE: ${{ steps.date.outputs.date }}
+          # 默认从用户的 trends 仓库拉。可以通过 secrets/vars 改写。
+          TRENDS_REPO: ${{ vars.TRENDS_REPO || 'jiayou20021120-afk/github-daily-trends' }}
+          TRENDS_BRANCH: ${{ vars.TRENDS_BRANCH || 'master' }}
+        run: |
+          mkdir -p data
+          URL="https://raw.githubusercontent.com/${TRENDS_REPO}/${TRENDS_BRANCH}/trends/${DATE}.md"
+          echo "Fetching $URL"
+          if ! curl -fL "$URL" -o "data/${DATE}.md"; then
+            echo "::error::No trends markdown found for ${DATE} at ${URL}"
+            exit 1
+          fi
+          echo "Markdown size: $(wc -c < data/${DATE}.md) bytes"
+
+      - name: Build video
+        run: python build_full.py --date "${{ steps.date.outputs.date }}"
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-video-${{ steps.date.outputs.date }}
+          path: output/daily_*.mp4
+          retention-days: 30
+
+      - name: Publish as GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: video-${{ steps.date.outputs.date }}
+          name: GitHub Trending ${{ steps.date.outputs.date }}
+          body: |
+            自动生成的每日 GitHub Trending 视频。
+            数据源：trends/${{ steps.date.outputs.date }}.md
+          files: output/daily_*.mp4
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

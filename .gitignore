@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+output/
+data/
+
+# Local-only / unrelated files
+voice_samples/
+paper_video.py
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
