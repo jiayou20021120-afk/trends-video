@@ -57,26 +57,36 @@ def F(path: str, size: int) -> ImageFont.FreeTypeFont:
 # Background — dynamic gradient with two slowly drifting blobs of color.
 # ---------------------------------------------------------------------------
 
-def render_background(t: float, total: float) -> Image.Image:
-    """Animated dark gradient with drifting purple/blue light blobs."""
+# Per-item color palettes — cycled by rank so adjacent items feel different.
+PALETTES = [
+    {"name": "neon",   "blob_a": (120, 70, 200, 90),  "blob_b": (50, 120, 220, 80)},   # purple-blue
+    {"name": "ocean",  "blob_a": (40, 160, 180, 90),  "blob_b": (80, 200, 140, 75)},   # teal-green
+    {"name": "ember",  "blob_a": (220, 110, 60, 90),  "blob_b": (190, 60, 140, 75)},   # orange-magenta
+]
+
+
+def palette_for(rank: int) -> dict:
+    return PALETTES[(rank - 1) % len(PALETTES)]
+
+
+def render_background(t: float, total: float, palette_id: int = 0) -> Image.Image:
+    """Animated dark gradient with drifting blobs. palette_id picks the color set."""
     base = Image.new("RGBA", (W, H), (10, 12, 20, 255))
 
-    # Two drifting blobs — phase tied to t
+    pal = PALETTES[palette_id % len(PALETTES)]
     phase = (t / max(total, 1.0)) * math.tau
     blob_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     bd = ImageDraw.Draw(blob_layer)
 
-    # Blob A — purple, drifts in a circle
     cx_a = int(W * 0.3 + 240 * math.cos(phase))
     cy_a = int(H * 0.25 + 180 * math.sin(phase * 1.1))
     bd.ellipse([cx_a - 600, cy_a - 600, cx_a + 600, cy_a + 600],
-               fill=(120, 70, 200, 90))
+               fill=pal["blob_a"])
 
-    # Blob B — blue, opposite phase
     cx_b = int(W * 0.7 + 240 * math.cos(phase + math.pi))
     cy_b = int(H * 0.75 + 180 * math.sin(phase * 1.2 + 1.0))
     bd.ellipse([cx_b - 700, cy_b - 700, cx_b + 700, cy_b + 700],
-               fill=(50, 120, 220, 80))
+               fill=pal["blob_b"])
 
     # Heavy blur for soft glow
     blob_layer = blob_layer.filter(ImageFilter.GaussianBlur(radius=120))
@@ -208,6 +218,36 @@ def render_lang(lang: str) -> Image.Image:
 # ---------------------------------------------------------------------------
 # Stars — counter (with optional flash overlay)
 # ---------------------------------------------------------------------------
+
+def render_streak(progress: float) -> Image.Image:
+    """A horizontal white streak that sweeps left→right across the stars line.
+    progress ∈ [0, 1] sets the streak's center X. Returns a transparent canvas."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    if progress <= 0 or progress >= 1:
+        return img
+    d = ImageDraw.Draw(img)
+    cx = int(progress * (W + 400) - 200)
+    cy = 1100
+    streak_w = 280
+    streak_h = 18
+    # core bright bar
+    d.rectangle([cx - streak_w, cy - streak_h, cx + streak_w, cy + streak_h],
+                fill=(255, 245, 200, 220))
+    # broader soft halo
+    halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    hd = ImageDraw.Draw(halo)
+    hd.rectangle([cx - streak_w * 1.6, cy - streak_h * 4,
+                  cx + streak_w * 1.6, cy + streak_h * 4],
+                 fill=(255, 220, 140, 80))
+    halo = halo.filter(ImageFilter.GaussianBlur(radius=22))
+    img = Image.alpha_composite(img, halo)
+    img = Image.alpha_composite(img, Image.alpha_composite(
+        Image.new("RGBA", (W, H), (0, 0, 0, 0)),
+        img,
+    ))
+    # blur the core slightly for smoothness
+    return img.filter(ImageFilter.GaussianBlur(radius=2))
+
 
 def render_stars(value: int, flash_alpha: float = 0.0) -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -445,16 +485,40 @@ def render_outro(items, top_n: int = 6) -> Image.Image:
 
 
 def render_subtitle(sentence: str) -> Image.Image:
-    """Render a bottom subtitle panel with the current sentence (keywords colored)."""
+    """Render a bottom subtitle panel with the current sentence.
+
+    Sentences starting with '我的看法' get a distinct gold treatment so the
+    opinion segment visually separates from the description segment.
+    """
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
+    is_take = sentence.lstrip().startswith("我的看法")
+
+    if is_take:
+        panel_fill = (38, 28, 12, 225)        # warm dark amber
+        stripe_color = ACCENT                  # gold
+        default_text = ACCENT
+        prefix_label = "看法"
+    else:
+        panel_fill = (15, 18, 26, 215)
+        stripe_color = PURPLE
+        default_text = FG
+        prefix_label = None
+
     # Panel
     top = 1380
-    d.rounded_rectangle([40, top, W - 40, H - 60], radius=28,
-                        fill=(15, 18, 26, 215))
-    # Accent stripe
-    d.rounded_rectangle([60, top + 28, 76, top + 92], radius=8, fill=PURPLE)
+    d.rounded_rectangle([40, top, W - 40, H - 60], radius=28, fill=panel_fill)
+    d.rounded_rectangle([60, top + 28, 76, top + 92], radius=8, fill=stripe_color)
+
+    # Optional little corner tag for the take panel
+    if prefix_label:
+        tag_fnt = F(FONT_BOLD, 32)
+        tag_w = int(d.textlength(prefix_label, font=tag_fnt) + 32)
+        d.rounded_rectangle([W - 60 - tag_w, top + 28, W - 60, top + 80],
+                            radius=18, fill=(255, 200, 80, 255))
+        d.text((W - 60 - tag_w + 16, top + 36), prefix_label,
+               font=tag_fnt, fill=(40, 28, 8, 255))
 
     fnt = F(FONT_HEI, 50)
     max_w = W - 160
@@ -463,22 +527,24 @@ def render_subtitle(sentence: str) -> Image.Image:
     y = top + 40
     line_h = 76
     for line in lines:
-        # Render with keyword coloring char-by-char
         x = 100
         i = 0
         while i < len(line):
-            matched = False
-            for kw, color in HIGHLIGHT_COLORS.items():
-                if line[i : i + len(kw)] == kw:
-                    d.text((x, y), kw, font=fnt, fill=color + (255,))
-                    x += int(d.textlength(kw, font=fnt))
-                    i += len(kw)
-                    matched = True
-                    break
-            if not matched:
-                d.text((x, y), line[i], font=fnt, fill=FG)
-                x += int(d.textlength(line[i], font=fnt))
-                i += 1
+            # On take panels, skip keyword coloring — keep all text in gold
+            if not is_take:
+                matched = False
+                for kw, color in HIGHLIGHT_COLORS.items():
+                    if line[i : i + len(kw)] == kw:
+                        d.text((x, y), kw, font=fnt, fill=color + (255,))
+                        x += int(d.textlength(kw, font=fnt))
+                        i += len(kw)
+                        matched = True
+                        break
+                if matched:
+                    continue
+            d.text((x, y), line[i], font=fnt, fill=default_text)
+            x += int(d.textlength(line[i], font=fnt))
+            i += 1
         y += line_h
         if y > H - 140:
             break

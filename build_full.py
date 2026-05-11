@@ -11,9 +11,10 @@ CLI:
 import argparse
 import asyncio
 import datetime as dt
+import json
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 import numpy as np
 from moviepy import (
     ImageClip,
@@ -41,6 +42,11 @@ from make_demo import (
 # Batch TTS
 # ---------------------------------------------------------------------------
 
+def _cache_valid(mp3_path: Path) -> bool:
+    """Both the mp3 and its sidecar .json (boundaries) must exist."""
+    return mp3_path.exists() and mp3_path.with_suffix(".json").exists()
+
+
 async def synth_all(items: List[TrendItem], audio_dir: Path) -> List[Path]:
     audio_dir.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -48,7 +54,9 @@ async def synth_all(items: List[TrendItem], audio_dir: Path) -> List[Path]:
     for it in items:
         p = audio_dir / f"narration_{it.rank:02d}.mp3"
         paths.append(p)
-        if not p.exists():
+        if not _cache_valid(p):
+            if p.exists():
+                p.unlink()  # stale mp3 without sidecar — regenerate
             tasks.append(synth_tts(it.narration, p))
     if tasks:
         print(f"[tts] generating {len(tasks)} narrations in parallel ...")
@@ -59,8 +67,10 @@ async def synth_all(items: List[TrendItem], audio_dir: Path) -> List[Path]:
 
 
 async def synth_one(text: str, out_path: Path) -> None:
-    if out_path.exists():
+    if _cache_valid(out_path):
         return
+    if out_path.exists():
+        out_path.unlink()
     await synth_tts(text, out_path)
 
 
@@ -127,6 +137,32 @@ def parse_args():
     return p.parse_args()
 
 
+def load_takes(date: str) -> Dict[int, str]:
+    """Load per-rank takes from takes/<date>.json. Returns {} if not found."""
+    p = Path(f"takes/{date}.json")
+    if not p.exists():
+        return {}
+    try:
+        raw = json.loads(p.read_text())
+        return {int(k): v for k, v in raw.items() if v}
+    except Exception:
+        return {}
+
+
+def merge_take_into_narration(item, take: str) -> None:
+    """Append '。我的看法是，<take>' to the item's narration in-place.
+    Idempotent: if the marker is already there, do nothing."""
+    if not take:
+        return
+    marker = "我的看法是"
+    if marker in item.narration:
+        return
+    n = item.narration.rstrip()
+    if not n.endswith(("。", "！", "？", ".", "!", "?")):
+        n += "。"
+    item.narration = n + "我的看法是，" + take
+
+
 def main():
     args = parse_args()
     date = args.date
@@ -139,6 +175,16 @@ def main():
 
     items = parse(md_path)
     print(f"[parse] {len(items)} items from {md_path}")
+
+    # Merge takes (opinionated commentary) if available
+    takes = load_takes(date)
+    if takes:
+        for it in items:
+            if it.rank in takes:
+                merge_take_into_narration(it, takes[it.rank])
+        print(f"[takes] merged {sum(1 for it in items if '我的看法是' in it.narration)} takes")
+    else:
+        print("[takes] no takes file found — running without opinions")
 
     audio_dir.mkdir(parents=True, exist_ok=True)
 

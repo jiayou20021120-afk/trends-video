@@ -11,6 +11,8 @@ data/
 # Local-only / unrelated files
 voice_samples/
 paper_video.py
+prefetch_research.py
+research/
 
 # OS / editor
 .DS_Store

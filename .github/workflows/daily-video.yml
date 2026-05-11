@@ -68,6 +68,21 @@ jobs:
           fi
           echo "Markdown size: $(wc -c < data/${DATE}.md) bytes"
 
+      # Generate one short opinionated take per project ("我的看法是…"). Requires
+      # ANTHROPIC_API_KEY to be configured as a repo secret. If the secret is
+      # missing the step silently skips and the video runs without opinions.
+      - name: Generate opinionated takes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        continue-on-error: true
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY secret not configured — skipping takes generation."
+            exit 0
+          fi
+          pip install anthropic
+          python generate_takes.py --date "${{ steps.date.outputs.date }}"
+
       - name: Build video
         run: python build_full.py --date "${{ steps.date.outputs.date }}"
 

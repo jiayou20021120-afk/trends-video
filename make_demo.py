@@ -49,14 +49,95 @@ def spring_scale(t: float, peak_t: float = 0.32, settle_t: float = 0.55) -> floa
 # Background as a list of frames (cheap animation: 24 frames over total dur)
 # ---------------------------------------------------------------------------
 
-def build_background_clip(total_dur: float) -> ImageClip:
+def build_background_clip(total_dur: float, palette_id: int = 0) -> ImageClip:
     n = max(int(total_dur * 8), 8)  # 8 fps for the bg loop is plenty
     frames = []
     for i in range(n):
         t = (i / n) * total_dur
-        img = L.render_background(t, total_dur)
+        img = L.render_background(t, total_dur, palette_id=palette_id)
         frames.append(np.array(img.convert("RGB")))
     return ImageSequenceClip(frames, fps=8).with_duration(total_dur)
+
+
+# ---------------------------------------------------------------------------
+# Entry-mode helpers — make adjacent items feel different.
+# ---------------------------------------------------------------------------
+
+ENTRY_MODES = ["spring", "slide", "zoom"]
+
+
+def make_rank_clip(rank: int, total: float, mode: str = "spring") -> ImageClip:
+    img = np.array(L.render_rank(rank))
+    base = ImageClip(img, transparent=True).with_duration(total - 0.15).with_start(0.15)
+    if mode == "slide":
+        # drop in from above
+        def pos(t):
+            if t < 0.4:
+                return ("center", int(- 220 * (1 - t / 0.4)))
+            return ("center", 0)
+        return base.with_position(pos).with_effects([FadeIn(0.25)])
+    if mode == "zoom":
+        return (
+            base
+            .with_effects([
+                Resize(lambda t: 1.6 - 0.6 * ease_out_cubic(min(1.0, t / 0.5))),
+                FadeIn(0.25),
+            ])
+            .with_position("center")
+        )
+    # spring (default)
+    return (
+        base
+        .with_effects([
+            Resize(lambda t: max(0.01, spring_scale(t))),
+            FadeIn(0.18),
+        ])
+        .with_position("center")
+    )
+
+
+def make_repo_clip(item: TrendItem, total: float, mode: str = "spring") -> ImageClip:
+    img = np.array(L.render_repo(item.repo))
+    base = ImageClip(img, transparent=True).with_duration(total - 0.55).with_start(0.55)
+    if mode == "slide":
+        def pos(t):
+            if t < 0.5:
+                return (int(900 * (1 - t / 0.5)), 0)
+            return (0, 0)
+        return base.with_position(pos).with_effects([FadeIn(0.3)])
+    if mode == "zoom":
+        return (
+            base
+            .with_effects([
+                FadeIn(0.3),
+                Resize(lambda t: 1.4 - 0.4 * ease_out_cubic(min(1.0, t / 0.5))),
+            ])
+            .with_position("center")
+        )
+    # spring (default)
+    return (
+        base
+        .with_effects([
+            FadeIn(0.4),
+            Resize(lambda t: 0.92 + 0.08 * min(1.0, t / 0.5)),
+        ])
+        .with_position("center")
+    )
+
+
+def build_streak_clip(start: float, dur: float = 0.55) -> ImageClip:
+    """Horizontal white-gold streak that sweeps over the stars line."""
+    n = int(dur * FPS)
+    frames = []
+    for i in range(n):
+        progress = (i + 1) / n
+        frames.append(np.array(L.render_streak(progress)))
+    return (
+        ImageSequenceClip(frames, fps=FPS)
+        .with_duration(dur)
+        .with_start(start)
+        .with_position((0, 0))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -149,11 +230,73 @@ def build_stars_clips(target: int, roll_start: float, roll_dur: float,
 # Subtitle clips — one per sentence, sequential, with previous fading out
 # ---------------------------------------------------------------------------
 
-def build_subtitle_clips(narration: str, audio_dur: float, audio_start: float):
+def _split_long(sentence: str, max_chars: int = 38):
+    """Break an over-long sentence at the first comma after max_chars/2 chars."""
+    if len(sentence) <= max_chars:
+        return [sentence]
+    for i, ch in enumerate(sentence):
+        if ch in "，,；;" and i >= max_chars // 2:
+            return [sentence[: i + 1].strip(), sentence[i + 1 :].strip()]
+    return [sentence]
+
+
+def build_subtitle_clips(narration: str, audio_dur: float, audio_start: float,
+                          boundaries: list = None):
+    """Build subtitle clips. If boundaries are provided (from edge-tts
+    SentenceBoundary events), use them for precise timing. Otherwise fall back
+    to char-length-weighted estimation."""
+    if boundaries:
+        # Subtitle should be fully visible ~100ms BEFORE the corresponding audio.
+        # We do that by starting 150ms early and fading in over 50ms.
+        LEAD = 0.15
+        FADE = 0.05
+        clips = []
+        for b in boundaries:
+            parts = _split_long(b["text"])
+            if len(parts) == 1:
+                t0 = audio_start + b["start"] - LEAD
+                d = b["duration"] + 0.20 + LEAD
+                img = L.render_subtitle(parts[0])
+                clip = (
+                    ImageClip(np.array(img), transparent=True)
+                    .with_duration(d)
+                    .with_start(t0)
+                    .with_effects([CrossFadeIn(FADE)])
+                    .with_position("center")
+                )
+                clips.append(clip)
+            else:
+                # Inside-sentence split: distribute by character count, weighting
+                # ASCII chars (English/digits) 2x because edge-tts speaks them slower.
+                def weight(s: str) -> float:
+                    return sum(2.0 if ch.isascii() and ch.strip() else 1.0 for ch in s)
+                weights = [weight(p) for p in parts]
+                total_w = sum(weights) or 1
+                t = audio_start + b["start"] - LEAD
+                first = True
+                for i, part in enumerate(parts):
+                    share = weights[i] / total_w
+                    d = b["duration"] * share
+                    img = L.render_subtitle(part)
+                    last = i == len(parts) - 1
+                    extra = (0.20 + LEAD) if last else 0.0
+                    lead_for_this = LEAD if first else 0.0
+                    clip = (
+                        ImageClip(np.array(img), transparent=True)
+                        .with_duration(d + extra + lead_for_this)
+                        .with_start(t if first else t - 0.0)
+                        .with_effects([CrossFadeIn(FADE)])
+                        .with_position("center")
+                    )
+                    clips.append(clip)
+                    t += d
+                    first = False
+        return clips
+
+    # Fallback: estimated timing
     sentences = L.split_sentences(narration)
     if not sentences:
         return []
-    # weight by char length to approximate reading time
     total_chars = sum(len(s) for s in sentences)
     clips = []
     cursor = audio_start
@@ -178,12 +321,49 @@ def build_subtitle_clips(narration: str, audio_dur: float, audio_start: float):
 # ---------------------------------------------------------------------------
 
 async def synth_tts(text: str, out_mp3: Path, voice: str = VOICE) -> None:
+    """Synthesize mp3 + a sidecar .json file with precise per-sentence timing
+    (edge-tts SentenceBoundary events). The .json is consumed by build_item_clip
+    to align subtitles to audio.
+    """
+    import json as _json
+    out_json = out_mp3.with_suffix(".json")
+    boundaries = []
     comm = edge_tts.Communicate(text, voice, rate=RATE)
-    await comm.save(str(out_mp3))
+    with open(out_mp3, "wb") as f:
+        async for chunk in comm.stream():
+            if chunk["type"] == "audio":
+                f.write(chunk["data"])
+            elif chunk["type"] == "SentenceBoundary":
+                boundaries.append({
+                    "text": chunk["text"],
+                    "start": chunk["offset"] / 1e7,
+                    "duration": chunk["duration"] / 1e7,
+                })
+    out_json.write_text(_json.dumps(boundaries, ensure_ascii=False, indent=2))
 
 
-def build_item_clip(item: TrendItem, date: str, audio_path: Path) -> CompositeVideoClip:
-    """Build a single-item video clip including audio. Caller owns TTS."""
+def load_boundaries(mp3_path: Path):
+    """Load sidecar boundaries; empty list if none."""
+    import json as _json
+    p = mp3_path.with_suffix(".json")
+    if not p.exists():
+        return []
+    return _json.loads(p.read_text())
+
+
+def build_item_clip(item: TrendItem, date: str, audio_path: Path,
+                    palette_id: int = None, entry_mode: str = None) -> CompositeVideoClip:
+    """Build a single-item video clip including audio. Caller owns TTS.
+
+    palette_id and entry_mode default to a per-rank rotation so adjacent items
+    feel different (palettes cycle every 3, entry modes cycle every 3).
+    """
+    if palette_id is None:
+        palette_id = (item.rank - 1) % len(L.PALETTES)
+    if entry_mode is None:
+        entry_mode = ENTRY_MODES[(item.rank - 1) % len(ENTRY_MODES)]
+
+    boundaries = load_boundaries(audio_path)
     audio = AudioFileClip(str(audio_path))
     narr_dur = audio.duration
 
@@ -191,27 +371,22 @@ def build_item_clip(item: TrendItem, date: str, audio_path: Path) -> CompositeVi
     audio_start = intro_dur - 0.2
     total = audio_start + narr_dur + 0.6
 
-    bg = build_background_clip(total)
+    bg = build_background_clip(total, palette_id=palette_id)
     header = fade_in_layer(L.render_header(date), start=0.0, dur=total, fade=0.3)
     lang = fade_in_layer(L.render_lang(item.language), start=0.9, dur=total - 0.9, fade=0.4)
-    rank = spring_in(L.render_rank(item.rank), start=0.15, dur=total - 0.15)
 
-    repo_img = L.render_repo(item.repo)
-    repo = (
-        ImageClip(np.array(repo_img), transparent=True)
-        .with_duration(total - 0.55)
-        .with_start(0.55)
-        .with_effects([
-            FadeIn(0.4),
-            Resize(lambda t: 0.92 + 0.08 * min(1.0, t / 0.5)),
-        ])
-        .with_position("center")
-    )
+    rank = make_rank_clip(item.rank, total, mode=entry_mode)
+    repo = make_repo_clip(item, total, mode=entry_mode)
 
-    stars_clips = build_stars_clips(item.stars_today, 1.1, 1.2, hold_until=total)
-    subs = build_subtitle_clips(item.narration, narr_dur, audio_start)
+    stars_roll_start = 1.1
+    stars_roll_dur = 1.2
+    stars_clips = build_stars_clips(item.stars_today, stars_roll_start, stars_roll_dur,
+                                     hold_until=total)
+    streak = build_streak_clip(start=stars_roll_start + stars_roll_dur)
 
-    layers = [bg, header, rank, repo, lang] + stars_clips + subs
+    subs = build_subtitle_clips(item.narration, narr_dur, audio_start, boundaries)
+
+    layers = [bg, header, rank, repo, lang] + stars_clips + [streak] + subs
     video = CompositeVideoClip(layers, size=(W, H)).with_duration(total)
     audio_clip = audio.with_start(audio_start)
     return video.with_audio(audio_clip)
