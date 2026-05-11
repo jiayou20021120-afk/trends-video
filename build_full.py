@@ -233,7 +233,7 @@ def main():
         fps=FPS,
         codec="libx264",
         audio_codec="aac",
-        preset="medium",
+        preset="fast",
         threads=4,
         logger=None,
     )

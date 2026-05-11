@@ -19,7 +19,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # GitHub-hosted ubuntu runner is 4-core / single-thread mp4 encode is slow.
+    # Local macOS render is ~22 min; CI typically 35-50 min — give headroom.
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
