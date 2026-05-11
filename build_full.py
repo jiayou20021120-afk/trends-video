@@ -13,6 +13,7 @@ import asyncio
 import datetime as dt
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import List, Dict
 import numpy as np
@@ -202,40 +203,69 @@ def main():
 
     asyncio.run(synth_meta())
 
-    # 3. Build clips
+    # 3. Render each segment to its own mp4. This avoids the OOM that
+    # concatenate_videoclips + a single write_videofile causes on a 16GB
+    # ubuntu runner (8 × 4-minute 1080x1920 clips in memory is too much).
+    seg_dir = Path("output/segments") / date
+    seg_dir.mkdir(parents=True, exist_ok=True)
+
+    def render_segment(clip, path: Path, label: str) -> Path:
+        print(f"[render] {label} → {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        clip.write_videofile(
+            str(path),
+            fps=FPS,
+            codec="libx264",
+            audio_codec="aac",
+            preset="fast",
+            threads=4,
+            logger=None,
+            ffmpeg_params=["-pix_fmt", "yuv420p"],
+        )
+        try:
+            clip.close()
+        except Exception:
+            pass
+        return path
+
+    seg_paths: List[Path] = []
+
     print("[build] intro ...")
     intro = build_intro_clip(date, len(items), intro_audio)
     intro = intro.with_effects([FadeIn(0.4), FadeOut(0.4)])
+    seg_paths.append(render_segment(intro, seg_dir / "00_intro.mp4", "intro"))
 
-    item_clips = []
     for i, (it, ap) in enumerate(zip(items, item_audio), 1):
         print(f"[build] item {i}/{len(items)}: {it.repo}")
         c = build_item_clip(it, date, ap)
         c = c.with_effects([FadeIn(0.25), FadeOut(0.35)])
-        item_clips.append(c)
+        seg_paths.append(render_segment(c, seg_dir / f"{i:02d}_item.mp4",
+                                         f"item {i}/{len(items)}"))
 
     print("[build] outro ...")
     outro = build_outro_clip(items, outro_audio, top_n=min(6, len(items)))
     outro = outro.with_effects([FadeIn(0.4), FadeOut(0.6)])
+    seg_paths.append(render_segment(outro, seg_dir / "99_outro.mp4", "outro"))
 
-    # 4. Concat
-    print("[concat] joining segments ...")
-    final = concatenate_videoclips(
-        [intro] + item_clips + [outro],
-        method="compose",
-        padding=-0.15,  # slight overlap so cross-fades blend
-    )
-
+    # 4. Stitch with ffmpeg concat demuxer — zero re-encode, near-instant.
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[render] writing {out_mp4} (total={final.duration:.1f}s) ...")
-    final.write_videofile(
-        str(out_mp4),
-        fps=FPS,
-        codec="libx264",
-        audio_codec="aac",
-        preset="fast",
-        threads=4,
-        logger=None,
+    list_file = seg_dir / "concat.txt"
+    list_file.write_text(
+        "\n".join(f"file '{p.resolve().as_posix()}'" for p in seg_paths) + "\n"
+    )
+    print(f"[concat] ffmpeg-stitching {len(seg_paths)} segments → {out_mp4}")
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(list_file),
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(out_mp4),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     print(f"[done] {out_mp4}")
 
