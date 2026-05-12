@@ -24,30 +24,79 @@ from pathlib import Path
 from parse import parse, TrendItem
 
 
-PROMPT_TEMPLATE = """你是写技术评论十年的资深开发者。给你一个今日 GitHub 热门项目，
-用 35-55 字写一句"实用主义判断"——只关心：明天我能用上吗？什么时候能真正派上用场？要解决什么才能用？
+PROMPT_TEMPLATE = """你是写技术评论十年的资深开发者。分析这个 GitHub 项目，只输出严格 JSON 一行：
 
-要求：
-- 一句话，35-55 字，最多 60 字
+{{"take": "35-55字实用主义判断", "category": "ai_agent|cli_tool|web_frontend|finance|research|tool", "hook": "官方|国产|开源|爆款|论文|null"}}
+
+字段规则：
+
+take —— 一句话 35-55 字（最多 60）：
+- 只关心明天能不能用、要多久才能用、卡在什么地方
 - 不要"前景广阔""值得关注""惊艳"这种废话
-- 直接给判断：能不能用、要多久才能用、卡在什么地方
-- 用中文，语气克制、口语化
-- 不带感叹号，不要前缀（不要"看法："这种引导语）
-- 输出只包含这句评论本身，不要任何前后说明
+- 中文，语气克制、口语化，不带感叹号，不要前缀
 
-项目信息：
+category —— 二选一最贴合的：
+- ai_agent: LLM/AI agent/RAG/embeddings/TTS/语音/扩散等 AI 项目
+- cli_tool: 终端工具/TUI/CLI/shell 增强
+- web_frontend: 前端框架/UI 库/设计工具/网页
+- finance: 量化/交易/金融分析
+- research: 论文复现/研究代码
+- tool: 通用工具/库/SDK/其他
+
+hook —— 选一个最强卖点或 null（没明显卖点就 null）：
+- 官方: anthropic/google/microsoft/aws/openai/meta/apple/bytedance 等大厂出品
+- 国产: 中国公司/中国开发者主导（字节/阿里/腾讯/百度/智谱/科大讯飞/Moonshot/DeepSeek/MiniMax 等）
+- 开源: 强调开源/免费/MIT/Apache 商用友好
+- 爆款: 今日 stars 涨幅 ≥ 3000
+- 论文: 配套论文研究代码
+
+项目：
 名称：{repo}
 语言：{language}
 今日新增 stars：{stars_today}
 简介：{description}
 中文讲述：{narration}
 
-直接给评论："""
+只输出 JSON 一行，无任何前后文字、不要 markdown 代码块标记："""
+
+
+_VALID_CATEGORIES = {"ai_agent", "cli_tool", "web_frontend", "finance", "research", "tool"}
+_VALID_HOOKS = {"官方", "国产", "开源", "爆款", "论文", None}
 
 
 def _clean(text: str) -> str:
     text = " ".join(text.split())
     return text.strip("\"'`*“”«» ")
+
+
+def _extract_json(raw: str) -> dict:
+    """Parse model output: strip code fences, find first {...} object, json.loads."""
+    s = raw.strip()
+    # strip ```json ... ``` if model wrapped it
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1] if "\n" in s else s
+        if s.endswith("```"):
+            s = s[: -3]
+        s = s.strip()
+    # find outermost { ... }
+    start = s.find("{")
+    end = s.rfind("}")
+    if start < 0 or end < 0 or end < start:
+        raise ValueError(f"no JSON object in: {raw[:200]}")
+    obj = json.loads(s[start : end + 1])
+
+    take = _clean(str(obj.get("take", "")))
+    category = obj.get("category") or "tool"
+    if category not in _VALID_CATEGORIES:
+        category = "tool"
+    hook = obj.get("hook")
+    if isinstance(hook, str):
+        hook = hook.strip().strip("\"'`")
+        if hook.lower() in ("null", "none", ""):
+            hook = None
+    if hook not in _VALID_HOOKS:
+        hook = None
+    return {"take": take, "category": category, "hook": hook}
 
 
 def _generate_via_claude_cli(prompt: str, timeout: int = 90) -> str:
@@ -60,7 +109,7 @@ def _generate_via_claude_cli(prompt: str, timeout: int = 90) -> str:
     if result.returncode != 0:
         raise RuntimeError(f"claude CLI exit={result.returncode}: "
                            f"{result.stderr.strip()[:200]}")
-    return _clean(result.stdout)
+    return result.stdout
 
 
 def _generate_via_sdk(prompt: str) -> str:
@@ -69,11 +118,11 @@ def _generate_via_sdk(prompt: str) -> str:
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=200,
+        max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
     parts = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-    return _clean("".join(parts))
+    return "".join(parts)
 
 
 def _pick_backend() -> str:
@@ -86,8 +135,8 @@ def _pick_backend() -> str:
 
 
 def generate_take(item: TrendItem, backend: str, retries: int = 2,
-                  timeout: int = 90) -> str:
-    """Return a single-line take. backend is 'cli' or 'sdk'."""
+                  timeout: int = 90) -> dict:
+    """Return {'take', 'category', 'hook'} for one project. backend ∈ {'cli','sdk'}."""
     prompt = PROMPT_TEMPLATE.format(
         repo=item.repo,
         language=item.language or "未知",
@@ -99,12 +148,13 @@ def generate_take(item: TrendItem, backend: str, retries: int = 2,
     for attempt in range(retries + 1):
         try:
             if backend == "cli":
-                text = _generate_via_claude_cli(prompt, timeout=timeout)
+                raw = _generate_via_claude_cli(prompt, timeout=timeout)
             else:
-                text = _generate_via_sdk(prompt)
-            if 12 <= len(text) <= 160:
-                return text
-            last_err = f"length out of range: {len(text)} chars"
+                raw = _generate_via_sdk(prompt)
+            obj = _extract_json(raw)
+            if 12 <= len(obj["take"]) <= 160:
+                return obj
+            last_err = f"take length out of range: {len(obj['take'])} chars"
         except subprocess.TimeoutExpired:
             last_err = f"timeout after {timeout}s"
         except Exception as e:
@@ -134,16 +184,19 @@ def main():
     items = parse(md_path)
     print(f"[parse] {len(items)} items from {md_path}")
 
-    cached = {}
+    cached: dict = {}
     if out_path.exists() and not args.force:
         try:
-            cached = json.loads(out_path.read_text())
-            cached = {int(k): v for k, v in cached.items()}
+            raw_cache = json.loads(out_path.read_text())
+            # Accept legacy string-only entries; promote to {'take': ...} so we still
+            # regenerate to get category/hook fields.
+            for k, v in raw_cache.items():
+                if isinstance(v, dict) and v.get("take") and "category" in v:
+                    cached[int(k)] = v
         except Exception:
             cached = {}
 
-    # Pick LLM backend: prefer local claude CLI, then SDK, else bail gracefully.
-    pending = [it for it in items if not (it.rank in cached and cached[it.rank])]
+    pending = [it for it in items if not (it.rank in cached and cached[it.rank].get("take"))]
     backend = _pick_backend() if pending else "cached"
     if backend == "none":
         print("[warn] no claude CLI and no ANTHROPIC_API_KEY — writing empty takes",
@@ -155,18 +208,22 @@ def main():
 
     takes: dict = {}
     for it in items:
-        if it.rank in cached and cached[it.rank]:
+        if it.rank in cached and cached[it.rank].get("take"):
             takes[it.rank] = cached[it.rank]
-            print(f"[take] {it.rank}. {it.repo:40s}  cached")
+            c = cached[it.rank]
+            print(f"[take] {it.rank}. {it.repo:40s}  cached  [{c['category']}]"
+                  + (f" hook={c['hook']}" if c.get("hook") else ""))
             continue
         print(f"[take] {it.rank}. {it.repo:40s}  generating ...", flush=True)
         try:
-            take = generate_take(it, backend=backend)
-            takes[it.rank] = take
-            print(f"       → {take}")
+            obj = generate_take(it, backend=backend)
+            takes[it.rank] = obj
+            hook_str = f" hook={obj['hook']}" if obj.get("hook") else ""
+            print(f"       [{obj['category']}]{hook_str}")
+            print(f"       → {obj['take']}")
         except Exception as e:
             print(f"       FAIL: {e}", file=sys.stderr)
-            takes[it.rank] = ""
+            takes[it.rank] = {"take": "", "category": "tool", "hook": None}
 
     out_path.write_text(json.dumps(takes, ensure_ascii=False, indent=2))
     print(f"[done] wrote {out_path}")

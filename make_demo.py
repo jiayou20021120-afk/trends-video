@@ -49,12 +49,14 @@ def spring_scale(t: float, peak_t: float = 0.32, settle_t: float = 0.55) -> floa
 # Background as a list of frames (cheap animation: 24 frames over total dur)
 # ---------------------------------------------------------------------------
 
-def build_background_clip(total_dur: float, palette_id: int = 0) -> ImageClip:
+def build_background_clip(total_dur: float, palette_id: int = 0,
+                          category: str = None) -> ImageClip:
     n = max(int(total_dur * 8), 8)  # 8 fps for the bg loop is plenty
     frames = []
     for i in range(n):
         t = (i / n) * total_dur
-        img = L.render_background(t, total_dur, palette_id=palette_id)
+        img = L.render_background(t, total_dur, palette_id=palette_id,
+                                  category=category)
         frames.append(np.array(img.convert("RGB")))
     return ImageSequenceClip(frames, fps=8).with_duration(total_dur)
 
@@ -352,11 +354,16 @@ def load_boundaries(mp3_path: Path):
 
 
 def build_item_clip(item: TrendItem, date: str, audio_path: Path,
-                    palette_id: int = None, entry_mode: str = None) -> CompositeVideoClip:
+                    palette_id: int = None, entry_mode: str = None,
+                    category: str = None, hook: str = None) -> CompositeVideoClip:
     """Build a single-item video clip including audio. Caller owns TTS.
 
-    palette_id and entry_mode default to a per-rank rotation so adjacent items
-    feel different (palettes cycle every 3, entry modes cycle every 3).
+    When `category` is given (one of L.CATEGORY_PALETTES keys), the background
+    color set and a sparse theme decoration are picked based on it.
+    Otherwise palette_id cycles per rank like before.
+
+    `hook` (国产/官方/开源/爆款/论文 or None) draws an eye-catching chip in the
+    top-right.
     """
     if palette_id is None:
         palette_id = (item.rank - 1) % len(L.PALETTES)
@@ -371,9 +378,16 @@ def build_item_clip(item: TrendItem, date: str, audio_path: Path,
     audio_start = intro_dur - 0.2
     total = audio_start + narr_dur + 0.6
 
-    bg = build_background_clip(total, palette_id=palette_id)
+    bg = build_background_clip(total, palette_id=palette_id, category=category)
     header = fade_in_layer(L.render_header(date), start=0.0, dur=total, fade=0.3)
     lang = fade_in_layer(L.render_lang(item.language), start=0.9, dur=total - 0.9, fade=0.4)
+
+    # Sparse theme decoration (one static layer behind the main content)
+    extra_layers = []
+    if category:
+        deco = fade_in_layer(L.render_decoration(category), start=0.3,
+                             dur=total - 0.3, fade=0.6)
+        extra_layers.append(deco)
 
     rank = make_rank_clip(item.rank, total, mode=entry_mode)
     repo = make_repo_clip(item, total, mode=entry_mode)
@@ -384,9 +398,20 @@ def build_item_clip(item: TrendItem, date: str, audio_path: Path,
                                      hold_until=total)
     streak = build_streak_clip(start=stars_roll_start + stars_roll_dur)
 
+    # Hook chip in the corner (no-op if hook is None)
+    if hook:
+        hook_clip = (
+            ImageClip(np.array(L.render_hook(hook)), transparent=True)
+            .with_duration(total - 0.7)
+            .with_start(0.7)
+            .with_effects([FadeIn(0.35), Resize(lambda t: 0.85 + 0.15 * min(1.0, t / 0.4))])
+            .with_position("center")
+        )
+        extra_layers.append(hook_clip)
+
     subs = build_subtitle_clips(item.narration, narr_dur, audio_start, boundaries)
 
-    layers = [bg, header, rank, repo, lang] + stars_clips + [streak] + subs
+    layers = [bg] + extra_layers[:1] + [header, rank, repo, lang] + stars_clips + [streak] + extra_layers[1:] + subs
     video = CompositeVideoClip(layers, size=(W, H)).with_duration(total)
     audio_clip = audio.with_start(audio_start)
     return video.with_audio(audio_clip)

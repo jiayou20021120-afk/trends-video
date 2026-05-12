@@ -1,0 +1,42 @@
+{
+  "1": {
+    "take": "Playwright直接替换,源码级指纹补丁过30项检测,爬虫党明天就能换上,合规风险自己担",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "2": {
+    "take": "字节背书的多模态 Agent 桌面框架，跑 demo 容易，要接自家模型和工具链得啃文档",
+    "category": "ai_agent",
+    "hook": "国产"
+  },
+  "3": {
+    "take": "路由器思路把各家免费额度串起来，装上能用，但 provider 一封号就断，自己跑工具链不踩坑得花半天",
+    "category": "tool",
+    "hook": "爆款"
+  },
+  "4": {
+    "take": "DataWhale 的入门课，主打 AI 辅助编程上手，适合零基础跟着学，老手直接跳过",
+    "category": "tool",
+    "hook": "国产"
+  },
+  "5": {
+    "take": "3DGS 编辑器里少见的可视化方案，浏览器里直接开搞，导出格式齐，做 AR 内容或调研 NeRF 替代品都能上手",
+    "category": "tool",
+    "hook": null
+  },
+  "6": {
+    "take": "AI 变现这名字就是流量密码，但 repo 里到底有啥能跑的东西、对接哪些平台、要不要自带模型 key，全看完才知道，别冲动 clone",
+    "category": "ai_agent",
+    "hook": null
+  },
+  "7": {
+    "take": "中文 LLM 实践教程，notebook 拿来就能跑，适合补基础或带新人入门，别指望学到最前沿的工程技巧",
+    "category": "research",
+    "hook": "国产"
+  },
+  "8": {
+    "take": "AI 生成的 React 代码静态扫描器，装上当 lint 跑一遍就能用，规则覆盖度待观望",
+    "category": "tool",
+    "hook": null
+  }
+}

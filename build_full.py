@@ -138,16 +138,28 @@ def parse_args():
     return p.parse_args()
 
 
-def load_takes(date: str) -> Dict[int, str]:
-    """Load per-rank takes from takes/<date>.json. Returns {} if not found."""
+def load_takes(date: str) -> Dict[int, dict]:
+    """Load per-rank takes from takes/<date>.json. Returns {rank: {take, category, hook}}.
+    Accepts legacy string-only takes by wrapping them in a dict."""
     p = Path(f"takes/{date}.json")
     if not p.exists():
         return {}
     try:
         raw = json.loads(p.read_text())
-        return {int(k): v for k, v in raw.items() if v}
     except Exception:
         return {}
+    out: Dict[int, dict] = {}
+    for k, v in raw.items():
+        if isinstance(v, str):
+            if v:
+                out[int(k)] = {"take": v, "category": "tool", "hook": None}
+        elif isinstance(v, dict) and v.get("take"):
+            out[int(k)] = {
+                "take": v["take"],
+                "category": v.get("category", "tool"),
+                "hook": v.get("hook"),
+            }
+    return out
 
 
 def merge_take_into_narration(item, take: str) -> None:
@@ -182,10 +194,13 @@ def main():
     if takes:
         for it in items:
             if it.rank in takes:
-                merge_take_into_narration(it, takes[it.rank])
-        print(f"[takes] merged {sum(1 for it in items if '我的看法是' in it.narration)} takes")
+                merge_take_into_narration(it, takes[it.rank]["take"])
+        merged = sum(1 for it in items if "我的看法是" in it.narration)
+        cats = ", ".join(sorted({v["category"] for v in takes.values()}))
+        hooks = sorted({v["hook"] for v in takes.values() if v["hook"]})
+        print(f"[takes] merged {merged} takes  categories=[{cats}]  hooks={hooks}")
     else:
-        print("[takes] no takes file found — running without opinions")
+        print("[takes] no takes file found — running without opinions / themes")
 
     audio_dir.mkdir(parents=True, exist_ok=True)
 
@@ -236,8 +251,13 @@ def main():
     seg_paths.append(render_segment(intro, seg_dir / "00_intro.mp4", "intro"))
 
     for i, (it, ap) in enumerate(zip(items, item_audio), 1):
-        print(f"[build] item {i}/{len(items)}: {it.repo}")
-        c = build_item_clip(it, date, ap)
+        meta = takes.get(it.rank, {})
+        category = meta.get("category")
+        hook = meta.get("hook")
+        cat_str = f"  [{category}]" if category else ""
+        hook_str = f" hook={hook}" if hook else ""
+        print(f"[build] item {i}/{len(items)}: {it.repo}{cat_str}{hook_str}")
+        c = build_item_clip(it, date, ap, category=category, hook=hook)
         c = c.with_effects([FadeIn(0.25), FadeOut(0.35)])
         seg_paths.append(render_segment(c, seg_dir / f"{i:02d}_item.mp4",
                                          f"item {i}/{len(items)}"))

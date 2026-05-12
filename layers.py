@@ -58,22 +58,44 @@ def F(path: str, size: int) -> ImageFont.FreeTypeFont:
 # ---------------------------------------------------------------------------
 
 # Per-item color palettes — cycled by rank so adjacent items feel different.
+# Kept for the intro/outro (no category context there).
 PALETTES = [
-    {"name": "neon",   "blob_a": (120, 70, 200, 90),  "blob_b": (50, 120, 220, 80)},   # purple-blue
-    {"name": "ocean",  "blob_a": (40, 160, 180, 90),  "blob_b": (80, 200, 140, 75)},   # teal-green
-    {"name": "ember",  "blob_a": (220, 110, 60, 90),  "blob_b": (190, 60, 140, 75)},   # orange-magenta
+    {"name": "neon",   "blob_a": (120, 70, 200, 90),  "blob_b": (50, 120, 220, 80)},
+    {"name": "ocean",  "blob_a": (40, 160, 180, 90),  "blob_b": (80, 200, 140, 75)},
+    {"name": "ember",  "blob_a": (220, 110, 60, 90),  "blob_b": (190, 60, 140, 75)},
 ]
+
+
+# Per-category palette — each project gets a visual identity matching its kind.
+CATEGORY_PALETTES = {
+    "ai_agent":    {"blob_a": (140, 80, 220, 100), "blob_b": (60, 130, 240, 85)},   # AI purple/blue
+    "cli_tool":    {"blob_a": (40, 200, 130, 100), "blob_b": (30, 110, 80, 80)},    # terminal green
+    "web_frontend":{"blob_a": (110, 200, 240, 95), "blob_b": (220, 130, 220, 80)},  # cyan/pink
+    "finance":     {"blob_a": (220, 160, 70, 95),  "blob_b": (210, 70, 80, 80)},    # gold/red
+    "research":    {"blob_a": (180, 150, 90, 90),  "blob_b": (90, 120, 180, 75)},   # parchment/blue
+    "tool":        {"blob_a": (110, 100, 160, 90), "blob_b": (160, 90, 130, 75)},   # neutral plum
+}
 
 
 def palette_for(rank: int) -> dict:
     return PALETTES[(rank - 1) % len(PALETTES)]
 
 
-def render_background(t: float, total: float, palette_id: int = 0) -> Image.Image:
-    """Animated dark gradient with drifting blobs. palette_id picks the color set."""
+def palette_for_category(category: str) -> dict:
+    return CATEGORY_PALETTES.get(category, CATEGORY_PALETTES["tool"])
+
+
+def render_background(t: float, total: float,
+                      palette_id: int = 0,
+                      category: str = None) -> Image.Image:
+    """Animated dark gradient. If `category` is given, picks the category palette;
+    otherwise falls back to PALETTES[palette_id]."""
     base = Image.new("RGBA", (W, H), (10, 12, 20, 255))
 
-    pal = PALETTES[palette_id % len(PALETTES)]
+    if category is not None:
+        pal = palette_for_category(category)
+    else:
+        pal = PALETTES[palette_id % len(PALETTES)]
     phase = (t / max(total, 1.0)) * math.tau
     blob_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     bd = ImageDraw.Draw(blob_layer)
@@ -108,6 +130,143 @@ def render_background(t: float, total: float, palette_id: int = 0) -> Image.Imag
 # ---------------------------------------------------------------------------
 # Header — top banner with brand label + date
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Hook chip — eye-catching badge in the top-right corner (国产/官方/开源/爆款/论文)
+# ---------------------------------------------------------------------------
+
+HOOK_STYLES = {
+    # bg, fg, marker (unicode glyph that works without an emoji font)
+    "国产": ((228, 50, 50, 240),  (255, 245, 240, 255), "★"),
+    "官方": ((45, 130, 230, 240), (240, 248, 255, 255), "◆"),
+    "开源": ((50, 190, 110, 240), (240, 255, 245, 255), "◇"),
+    "爆款": ((255, 100, 30, 240), (255, 248, 235, 255), "▲"),
+    "论文": ((180, 130, 70, 240), (255, 250, 240, 255), "§"),
+}
+
+
+def render_hook(hook: str) -> Image.Image:
+    """Render a hook chip in the top-right corner. Returns transparent if no hook."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    if not hook or hook not in HOOK_STYLES:
+        return img
+    bg, fg, glyph = HOOK_STYLES[hook]
+    d = ImageDraw.Draw(img)
+    fnt = F(FONT_BOLD, 56)
+    label = f"{glyph}  {hook}"
+    tw = int(d.textlength(label, font=fnt))
+    pad_x, pad_y = 32, 18
+    box_w = tw + pad_x * 2
+    box_h = 56 + pad_y * 2
+    x0 = W - 60 - box_w
+    y0 = 230
+    # subtle shadow
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        [x0 + 6, y0 + 8, x0 + box_w + 6, y0 + box_h + 8],
+        radius=26, fill=(0, 0, 0, 120),
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=8))
+    img = Image.alpha_composite(img, shadow)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([x0, y0, x0 + box_w, y0 + box_h], radius=26, fill=bg)
+    d.text((x0 + pad_x, y0 + pad_y - 4), label, font=fnt, fill=fg)
+    return img
+
+
+# ---------------------------------------------------------------------------
+# Category decoration — sparse, theme-appropriate flourishes around the canvas
+# ---------------------------------------------------------------------------
+
+def _draw_neural_net(d, w, h, color):
+    """Scattered dots + thin connecting lines — feels like a neural network."""
+    import random
+    rng = random.Random(42)
+    points = []
+    for _ in range(14):
+        x = rng.randint(40, w - 40)
+        y = rng.choice([rng.randint(180, 360), rng.randint(1140, 1340)])
+        points.append((x, y))
+    for x, y in points:
+        d.ellipse([x - 5, y - 5, x + 5, y + 5], fill=color)
+    # connect close pairs
+    for i, p in enumerate(points):
+        for q in points[i + 1 : i + 4]:
+            dx, dy = p[0] - q[0], p[1] - q[1]
+            if dx * dx + dy * dy < 180 * 180:
+                d.line([p, q], fill=(color[0], color[1], color[2], 90), width=2)
+
+
+def _draw_terminal(d, w, h, color):
+    """Faint terminal prompt markers >_ in corners."""
+    fnt = F(FONT_BOLD, 64)
+    for x, y in [(60, 220), (60, 1300), (w - 200, 220), (w - 200, 1300)]:
+        d.text((x, y), ">_", font=fnt, fill=color)
+
+
+def _draw_grid(d, w, h, color):
+    """Faint horizontal/vertical guide lines — UI grid feel."""
+    for y in range(220, 1360, 110):
+        d.line([(60, y), (w - 60, y)], fill=color, width=2)
+    for x in range(60, w - 60, 220):
+        d.line([(x, 220), (x, 1360)], fill=color, width=2)
+
+
+def _draw_candles(d, w, h, color):
+    """Thin candlestick-style vertical bars across the middle band."""
+    import random
+    rng = random.Random(7)
+    base_y = 1280
+    for i in range(18):
+        x = 60 + i * 56
+        height = rng.randint(20, 90)
+        d.rectangle([x, base_y - height, x + 14, base_y + 4], fill=color)
+        d.line([(x + 7, base_y - height - 14), (x + 7, base_y + 18)],
+               fill=color, width=1)
+
+
+def _draw_research(d, w, h, color):
+    """Greek letters and brackets scattered along the edges."""
+    glyphs = ["σ", "Σ", "λ", "∫", "θ", "π", "∇", "α", "β"]
+    import random
+    rng = random.Random(13)
+    fnt = F(FONT_BOLD, 70)
+    for g in glyphs:
+        x = rng.randint(40, w - 100)
+        y = rng.choice([rng.randint(220, 360), rng.randint(1180, 1340)])
+        d.text((x, y), g, font=fnt, fill=color)
+
+
+def _draw_tool(d, w, h, color):
+    """Minimal circle/ring marks — generic tool aesthetic."""
+    import random
+    rng = random.Random(5)
+    for _ in range(8):
+        cx = rng.randint(40, w - 40)
+        cy = rng.choice([rng.randint(200, 380), rng.randint(1160, 1340)])
+        r = rng.randint(14, 28)
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=3)
+
+
+_DECOR_DRAWERS = {
+    "ai_agent": _draw_neural_net,
+    "cli_tool": _draw_terminal,
+    "web_frontend": _draw_grid,
+    "finance": _draw_candles,
+    "research": _draw_research,
+    "tool": _draw_tool,
+}
+
+
+def render_decoration(category: str) -> Image.Image:
+    """Sparse theme-appropriate marks behind the main content. Single static image
+    rendered once per category — cached implicitly by call site."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    drawer = _DECOR_DRAWERS.get(category, _draw_tool)
+    color = (255, 255, 255, 38)  # very subtle — won't fight foreground
+    drawer(ImageDraw.Draw(img), W, H, color)
+    return img
+
 
 def render_header(date: str) -> Image.Image:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
