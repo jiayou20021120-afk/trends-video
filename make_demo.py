@@ -51,14 +51,17 @@ def spring_scale(t: float, peak_t: float = 0.32, settle_t: float = 0.55) -> floa
 
 def build_background_clip(total_dur: float, palette_id: int = 0,
                           category: str = None) -> ImageClip:
-    n = max(int(total_dur * 8), 8)  # 8 fps for the bg loop is plenty
+    # 6 fps background loop — eye barely notices below 8 fps for blob drifts,
+    # and this cuts ~25% of background-frame encode work on the CI runner.
+    bg_fps = 6
+    n = max(int(total_dur * bg_fps), 6)
     frames = []
     for i in range(n):
         t = (i / n) * total_dur
         img = L.render_background(t, total_dur, palette_id=palette_id,
                                   category=category)
         frames.append(np.array(img.convert("RGB")))
-    return ImageSequenceClip(frames, fps=8).with_duration(total_dur)
+    return ImageSequenceClip(frames, fps=bg_fps).with_duration(total_dur)
 
 
 # ---------------------------------------------------------------------------

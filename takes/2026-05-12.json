@@ -1,0 +1,42 @@
+{
+  "1": {
+    "take": "本地跑的个人 AI，Rust 写的主打隐私，能不能装上、跑什么模型、要多少显存全没说，先观望",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "2": {
+    "take": "给Claude Code/Cursor加持久记忆，思路对，但benchmark第一这种说法得自己跑过才信，先小项目试水",
+    "category": "ai_agent",
+    "hook": null
+  },
+  "3": {
+    "take": "想绕 Cloudflare 的爬虫党可以直接换上试，Playwright 接口照搬，但小心目标站合规和封号风险",
+    "category": "tool",
+    "hook": null
+  },
+  "4": {
+    "take": "成熟的QUIC代理工具，部署文档齐全，半小时能搭起来，关键看服务器带宽和落地IP够不够干净",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "5": {
+    "take": "Matt Pocock 个人 Claude Code skills 直接搬出来，clone 进 .claude 目录就能用，看大牛怎么配 AI 编程最快路径",
+    "category": "cli_tool",
+    "hook": "爆款"
+  },
+  "6": {
+    "take": "装上就能用的后台录像工具，开源无广告这点确实戳中刚需，安卓限制绕过得还行",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "7": {
+    "take": "AI 写的 React 代码质量参差不齐，这工具专门抓性能坑，接到 CI 里跑一遍能省不少 review 时间",
+    "category": "web_frontend",
+    "hook": null
+  },
+  "8": {
+    "take": "想真正搞懂 LLM 内部机制就照着抄一遍，notebook 跑得通，但别指望两周看完，时间预算按月算",
+    "category": "research",
+    "hook": "开源"
+  }
+}
