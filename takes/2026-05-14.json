@@ -1,0 +1,42 @@
+{
+  "1": {
+    "take": "WiFi 信号当雷达用思路够硬核，但精度全看你天线和环境，先在自家路由器上跑个 demo 体验下，离能用还远。",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "2": {
+    "take": "名字喊得响但 README 没干货，模型怎么跑、需要多少资源、对接哪些后端都不说，先观望别上头 clone。",
+    "category": "ai_agent",
+    "hook": null
+  },
+  "3": {
+    "take": "给 Claude Code 和 Cursor 加跨会话记忆思路对，但所谓 benchmark 第一这话得自己跑过才信，先小项目接进来试。",
+    "category": "ai_agent",
+    "hook": "爆款"
+  },
+  "4": {
+    "take": "agent skills 这赛道挤得很，shell 实现的好处是接入门槛低，clone 进 .claude 目录今晚就能用，质量好不好挑着试。",
+    "category": "cli_tool",
+    "hook": null
+  },
+  "5": {
+    "take": "想给 AI 加科研能力的现成技能包，跑通要先装一堆领域依赖，做研究的可以评估，普通工程师暂时用不上。",
+    "category": "research",
+    "hook": null
+  },
+  "6": {
+    "take": "金融时序的 foundation model 听着诱人，但训练数据、回测结果、跟传统模型比谁强都没看到，先当 paper 读别上实盘。",
+    "category": "finance",
+    "hook": "论文"
+  },
+  "7": {
+    "take": "成熟的 CV 工具箱，做目标检测和跟踪的明天就能 pip 装上替掉一堆胶水代码，老仓库稳了。",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "8": {
+    "take": "运维监控的标配老兵，配合 InfluxDB 或 Prometheus 直接装，配置繁琐但插件齐全，比自己写采集器划算。",
+    "category": "tool",
+    "hook": "开源"
+  }
+}
