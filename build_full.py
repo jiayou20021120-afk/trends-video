@@ -30,6 +30,7 @@ import layers as L
 from make_demo import (
     build_item_clip,
     build_background_clip,
+    pad_audio,
     synth_tts,
     DATE,
     VOICE,
@@ -81,7 +82,8 @@ async def synth_one(text: str, out_path: Path) -> None:
 
 def build_intro_clip(date: str, n_items: int, audio_path: Path) -> CompositeVideoClip:
     audio = AudioFileClip(str(audio_path))
-    dur = audio.duration + 0.6
+    lead = 0.2
+    dur = lead + audio.duration + 0.4
 
     bg = build_background_clip(dur)
     fg_img = L.render_intro(date, n_items)
@@ -92,13 +94,14 @@ def build_intro_clip(date: str, n_items: int, audio_path: Path) -> CompositeVide
         .with_position("center")
     )
     video = CompositeVideoClip([bg, fg], size=(W, H)).with_duration(dur)
-    return video.with_audio(audio.with_start(0.2))
+    return video.with_audio(pad_audio(audio, lead=lead, total=dur))
 
 
 def build_outro_clip(items: List[TrendItem], audio_path: Path,
                      top_n: int = 6) -> CompositeVideoClip:
     audio = AudioFileClip(str(audio_path))
-    dur = audio.duration + 0.8
+    lead = 0.3
+    dur = lead + audio.duration + 0.5
 
     bg = build_background_clip(dur)
     fg_img = L.render_outro(items, top_n=top_n)
@@ -109,7 +112,7 @@ def build_outro_clip(items: List[TrendItem], audio_path: Path,
         .with_position("center")
     )
     video = CompositeVideoClip([bg, fg], size=(W, H)).with_duration(dur)
-    return video.with_audio(audio.with_start(0.3))
+    return video.with_audio(pad_audio(audio, lead=lead, total=dur))
 
 
 # ---------------------------------------------------------------------------

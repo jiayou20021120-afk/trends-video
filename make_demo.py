@@ -49,6 +49,39 @@ def spring_scale(t: float, peak_t: float = 0.32, settle_t: float = 0.55) -> floa
 # Background as a list of frames (cheap animation: 24 frames over total dur)
 # ---------------------------------------------------------------------------
 
+def pad_audio(audio, lead: float, total: float):
+    """Return an audio clip of length `total` with `audio` placed at offset `lead`,
+    silence-padded before and after. Fixes the mp4 audio-stream-shorter-than-video
+    problem that caused subtitles to lag voice when segments were concat'd with
+    ffmpeg `-c copy`."""
+    import numpy as np
+    from moviepy.audio.AudioClip import AudioArrayClip
+    from moviepy import concatenate_audioclips
+
+    fps = int(getattr(audio, "fps", None) or 44100)
+    # Detect channel count from the audio clip
+    try:
+        sample = audio.get_frame(0)
+        nchan = sample.shape[-1] if hasattr(sample, "shape") and sample.ndim > 0 else 1
+    except Exception:
+        nchan = 2
+    nchan = max(1, int(nchan))
+
+    parts = []
+    if lead > 0:
+        n = max(1, int(lead * fps))
+        parts.append(AudioArrayClip(np.zeros((n, nchan), dtype=np.float32), fps=fps))
+    parts.append(audio)
+    tail = total - lead - audio.duration
+    if tail > 1.0 / fps:
+        n = max(1, int(tail * fps))
+        parts.append(AudioArrayClip(np.zeros((n, nchan), dtype=np.float32), fps=fps))
+
+    if len(parts) == 1:
+        return parts[0]
+    return concatenate_audioclips(parts)
+
+
 def build_background_clip(total_dur: float, palette_id: int = 0,
                           category: str = None) -> ImageClip:
     # 6 fps background loop — eye barely notices below 8 fps for blob drifts,
@@ -416,8 +449,8 @@ def build_item_clip(item: TrendItem, date: str, audio_path: Path,
 
     layers = [bg] + extra_layers[:1] + [header, rank, repo, lang] + stars_clips + [streak] + extra_layers[1:] + subs
     video = CompositeVideoClip(layers, size=(W, H)).with_duration(total)
-    audio_clip = audio.with_start(audio_start)
-    return video.with_audio(audio_clip)
+    full_audio = pad_audio(audio, lead=audio_start, total=total)
+    return video.with_audio(full_audio)
 
 
 def main():
