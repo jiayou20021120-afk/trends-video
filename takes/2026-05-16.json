@@ -1,0 +1,42 @@
+{
+  "1": {
+    "take": "装上当 npm/node 替代基本能跑，性能确实快；个别原生模块和边角 API 还是会踩坑，生产前先全量跑测试",
+    "category": "tool",
+    "hook": null
+  },
+  "2": {
+    "take": "科研金融写作的 agent skills 合集，拿来就能挂到 Claude Code 上跑，省去自己拼 prompt 的活，质量参差需自己挑",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "3": {
+    "take": "装上就是一堆 skill 文件,Claude Code 直接能调,想跑 TDD 或调试流程明天就能用,关键看团队愿不愿意按它的节奏走",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "4": {
+    "take": "自托管 200+ 模型聚合站，省了一个个接 API 的活，但模型权重和算力还得自己掏，跑起来不便宜",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "5": {
+    "take": "端侧离线TTS方案，ONNX跑起来不挑环境，移动端嵌入式能直接接，韩语英语日语都覆盖",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "6": {
+    "take": "私有化本地大模型助手又一款，Rust 写的图省心，但实际能力得看模型和生态，短期内更多是尝鲜",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "7": {
+    "take": "WiFi信号搞空间感知听着炫，但需要特定网卡和校准环境，普通路由器跑不起来，玩玩可以落地还早",
+    "category": "research",
+    "hook": "开源"
+  },
+  "8": {
+    "take": "看名字就懂的进程溯源小工具，go install 即用，适合临时排查不明进程，长期监控还得靠正经的 APM",
+    "category": "cli_tool",
+    "hook": "开源"
+  }
+}
