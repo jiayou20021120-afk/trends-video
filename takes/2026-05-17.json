@@ -1,0 +1,42 @@
+{
+  "1": {
+    "take": "Rust 写的本地个人 AI 平台，主打隐私不上云，今日爆涨近 1700 星，但具体跑什么模型、硬件门槛多高都没说清，先观望",
+    "category": "ai_agent",
+    "hook": "爆款"
+  },
+  "2": {
+    "take": "想法挺好但还很早，把任意 CLI 包成 Agent 可调用层，实际能不能稳定跑通看适配质量，目前更像 demo",
+    "category": "ai_agent",
+    "hook": null
+  },
+  "3": {
+    "take": "Cal.com 出的轻量自托管版，想替代 Calendly 的可以拉下来跑，配置比正式版简单不少",
+    "category": "web_frontend",
+    "hook": "开源"
+  },
+  "4": {
+    "take": "装上直接替 npm 跑脚本和测试基本无痛，当 Node 全量替身还得踩 native 模块和边角 API 的坑",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "5": {
+    "take": "自托管要自己配 GPU 和模型权重，200+ 模型听着多但实际能跑起来的没几个，先看文档评估硬件门槛",
+    "category": "ai_agent",
+    "hook": "开源"
+  },
+  "6": {
+    "take": "OSINT 聚合器加 AI 分析，思路不新但整合度看着够用，能不能跑起来取决于那堆数据源 API key 你愿不愿意一个个去申请",
+    "category": "tool",
+    "hook": "开源"
+  },
+  "7": {
+    "take": "想给 AI Agent 装技能包的注册中心，概念清晰但生态没起来，明天能用的现成 skill 太少，先观望",
+    "category": "ai_agent",
+    "hook": null
+  },
+  "8": {
+    "take": "Notebook 教程合集，讲企业级 Agent 从原型到部署，照着跑能少踩坑，但真上生产还得自己搭基建",
+    "category": "ai_agent",
+    "hook": "开源"
+  }
+}
